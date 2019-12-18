@@ -2,6 +2,7 @@ package rest2sftp
 
 import (
 	"fmt"
+	"github.com/gorilla/mux"
 	"github.com/pkg/sftp"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/crypto/ssh"
@@ -9,7 +10,6 @@ import (
 	"net/http"
 	"os"
 	"strconv"
-	"github.com/gorilla/mux"
 	"strings"
 )
 
@@ -123,6 +123,7 @@ func (s *SftpServer)handleGetFolder(w http.ResponseWriter, r *http.Request) {
 	log.Info("handle get folder")
 	path := r.URL.Path
 	path = s.getFolder(path)
+	log.Info("Folder:", path)
 	fileInfos, err := s.client.ReadDir(path)
 	if err != nil {
 		log.WithError(err).Error("read directory error")
@@ -145,6 +146,7 @@ func (s *SftpServer)handlePostFolder(w http.ResponseWriter, r *http.Request) {
 	log.Info("handle post folder")
 	path := r.URL.Path
 	path = s.getFolder(path)
+	log.Info("Folder:", path)
 	err := s.client.MkdirAll(path)
 	if err != nil {
 		log.WithError(err).Error("Create directory error")
@@ -161,6 +163,7 @@ func (s *SftpServer)handleDeleteFolder(w http.ResponseWriter, r *http.Request) {
 	log.Info("handle delete folder")
 	path := r.URL.Path
 	path = s.getFolder(path)
+	log.Info("Folder:", path)
 	err := s.client.RemoveDirectory(path)
 
 	if err != nil {
@@ -178,6 +181,7 @@ func (s *SftpServer)handleGetFile(w http.ResponseWriter, r *http.Request) {
 	log.Info("handle get file")
 	path := r.URL.Path
 	path = s.getFolder(path)
+	log.Info("Folder:", path)
 	srcFile, err := s.client.Open(path)
 	if err != nil {
 		log.WithError(err).Error("Get file error")
@@ -228,6 +232,7 @@ func (s *SftpServer)handlePostFile(w http.ResponseWriter, r *http.Request) {
 	log.Info("handle post file")
 	path := r.URL.Path
 	path = s.getFolder(path)
+	log.Info("Folder:", path)
 	r.ParseMultipartForm(6000)
 	file, _, err := r.FormFile("file")
 	if err != nil {
@@ -265,6 +270,7 @@ func (s *SftpServer)handleDeleteFile(w http.ResponseWriter, r *http.Request) {
 	log.Info("handle delete file")
 	path := r.URL.Path
 	path = s.getFolder(path)
+	log.Info("Folder:", path)
 	err := s.client.Remove(path)
 
 	if err != nil {
