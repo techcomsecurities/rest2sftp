@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"github.com/gorilla/mux"
 )
 
 type FileInfo struct {
@@ -28,6 +29,7 @@ type ServerCfg struct {
 	SFTP_USER_NAME string
 	SFTP_USER_PASSWORD string
 	REST_PORT string
+	REST_BASE_PATH string
 }
 
 type SftpServer struct {
@@ -36,6 +38,7 @@ type SftpServer struct {
 	sftpUserName string
 	sftpUserPassword string
 	restPort string
+	restBasePath string
 	conn *ssh.Client
 	client *sftp.Client
 }
@@ -47,6 +50,7 @@ func NewServer(cfg ServerCfg) *SftpServer{
 		sftpUserName:      cfg.SFTP_USER_NAME,
 		sftpUserPassword:  cfg.SFTP_USER_PASSWORD,
 		restPort:cfg.REST_PORT,
+		restBasePath:cfg.REST_BASE_PATH,
 	}
 }
 
@@ -73,8 +77,10 @@ func (s *SftpServer)Run() error {
 		return err
 	}
 	s.client = client
+	router := mux.NewRouter()
+	router.PathPrefix(s.restBasePath).Handler(s)
 
-	http.Handle("/", s)
+	http.Handle("/", router)
 	log.Infof("rest2sftp service is running at port %s", s.restPort)
 	return http.ListenAndServe(fmt.Sprintf(":%s", s.restPort), s)
 }
