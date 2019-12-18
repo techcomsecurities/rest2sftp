@@ -10,6 +10,7 @@ import (
 	"os"
 	"strconv"
 	"github.com/gorilla/mux"
+	"strings"
 )
 
 type FileInfo struct {
@@ -121,6 +122,7 @@ func isDirectory(path string) bool {
 func (s *SftpServer)handleGetFolder(w http.ResponseWriter, r *http.Request) {
 	log.Info("handle get folder")
 	path := r.URL.Path
+	path = s.getFolder(path)
 	fileInfos, err := s.client.ReadDir(path)
 	if err != nil {
 		log.WithError(err).Error("read directory error")
@@ -142,6 +144,7 @@ func (s *SftpServer)handleGetFolder(w http.ResponseWriter, r *http.Request) {
 func (s *SftpServer)handlePostFolder(w http.ResponseWriter, r *http.Request) {
 	log.Info("handle post folder")
 	path := r.URL.Path
+	path = s.getFolder(path)
 	err := s.client.MkdirAll(path)
 	if err != nil {
 		log.WithError(err).Error("Create directory error")
@@ -157,6 +160,7 @@ func (s *SftpServer)handlePostFolder(w http.ResponseWriter, r *http.Request) {
 func (s *SftpServer)handleDeleteFolder(w http.ResponseWriter, r *http.Request) {
 	log.Info("handle delete folder")
 	path := r.URL.Path
+	path = s.getFolder(path)
 	err := s.client.RemoveDirectory(path)
 
 	if err != nil {
@@ -173,6 +177,7 @@ func (s *SftpServer)handleDeleteFolder(w http.ResponseWriter, r *http.Request) {
 func (s *SftpServer)handleGetFile(w http.ResponseWriter, r *http.Request) {
 	log.Info("handle get file")
 	path := r.URL.Path
+	path = s.getFolder(path)
 	srcFile, err := s.client.Open(path)
 	if err != nil {
 		log.WithError(err).Error("Get file error")
@@ -222,6 +227,7 @@ func (s *SftpServer)handleGetFile(w http.ResponseWriter, r *http.Request) {
 func (s *SftpServer)handlePostFile(w http.ResponseWriter, r *http.Request) {
 	log.Info("handle post file")
 	path := r.URL.Path
+	path = s.getFolder(path)
 	r.ParseMultipartForm(6000)
 	file, _, err := r.FormFile("file")
 	if err != nil {
@@ -258,6 +264,7 @@ func (s *SftpServer)handlePostFile(w http.ResponseWriter, r *http.Request) {
 func (s *SftpServer)handleDeleteFile(w http.ResponseWriter, r *http.Request) {
 	log.Info("handle delete file")
 	path := r.URL.Path
+	path = s.getFolder(path)
 	err := s.client.Remove(path)
 
 	if err != nil {
@@ -278,4 +285,8 @@ func convertDto(info os.FileInfo) FileInfo {
 		LastModified: info.ModTime().Format("2006-01-02 15:04:05"),
 		IsDirectory:  info.IsDir(),
 	}
+}
+
+func (s *SftpServer)getFolder(path string) string {
+	return strings.Replace(path, s.restBasePath, "", 1)
 }
