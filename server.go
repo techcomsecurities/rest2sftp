@@ -182,6 +182,15 @@ func (s *SftpServer)handleGetFile(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Path
 	path = s.getFolder(path)
 	log.Info("Folder:", path)
+	info, err := s.client.Lstat(path)
+	if err != nil {
+		log.WithError(err).Error("Get file info error")
+		tmpErr := Wrap(err, "Get file error")
+		tmpErr.StatusCode = 1
+		RespondWithJSON(w, http.StatusBadRequest, tmpErr)
+		return
+	}
+
 	srcFile, err := s.client.Open(path)
 	if err != nil {
 		log.WithError(err).Error("Get file error")
@@ -191,7 +200,14 @@ func (s *SftpServer)handleGetFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fileHeader := make([]byte, 512)
+	var headerBuffSize int64
+	if info.Size() < 512 {
+		headerBuffSize = info.Size()
+	}else {
+		headerBuffSize = 512
+	}
+
+	fileHeader := make([]byte, headerBuffSize)
 	_, err = srcFile.Read(fileHeader)
 	if err != nil {
 		log.WithError(err).Error("Get file header error")
