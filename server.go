@@ -31,6 +31,7 @@ type ServerCfg struct {
 	SFTP_USER_PASSWORD string
 	REST_PORT string
 	REST_BASE_PATH string
+	REST_HEALTH_CHECK string
 }
 
 type SftpServer struct {
@@ -40,6 +41,7 @@ type SftpServer struct {
 	sftpUserPassword string
 	restPort string
 	restBasePath string
+	restHealthCheck string
 	conn *ssh.Client
 	client *sftp.Client
 }
@@ -52,6 +54,7 @@ func NewServer(cfg ServerCfg) *SftpServer{
 		sftpUserPassword:  cfg.SFTP_USER_PASSWORD,
 		restPort:cfg.REST_PORT,
 		restBasePath:cfg.REST_BASE_PATH,
+		restHealthCheck:cfg.REST_HEALTH_CHECK,
 	}
 }
 
@@ -79,11 +82,17 @@ func (s *SftpServer)Run() error {
 	}
 	s.client = client
 	router := mux.NewRouter()
+	router.HandleFunc(s.restHealthCheck, healthCheck).Methods(http.MethodGet)
 	router.PathPrefix(s.restBasePath).Handler(s)
 
 	http.Handle("/", router)
 	log.Infof("rest2sftp service is running at port %s", s.restPort)
-	return http.ListenAndServe(fmt.Sprintf(":%s", s.restPort), s)
+	return http.ListenAndServe(fmt.Sprintf(":%s", s.restPort), router)
+}
+
+func healthCheck(w http.ResponseWriter, r *http.Request){
+	log.Info("calling healthCheck")
+	w.WriteHeader(http.StatusOK)
 }
 
 func (s *SftpServer)ServeHTTP(w http.ResponseWriter, r *http.Request){
