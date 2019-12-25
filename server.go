@@ -2,7 +2,6 @@ package rest2sftp
 
 import (
 	"fmt"
-	"github.com/gorilla/mux"
 	"github.com/pkg/sftp"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/crypto/ssh"
@@ -29,9 +28,7 @@ type ServerCfg struct {
 	SFTP_SERVER_PORT string
 	SFTP_USER_NAME string
 	SFTP_USER_PASSWORD string
-	REST_PORT string
 	REST_BASE_PATH string
-	REST_HEALTH_CHECK string
 }
 
 type SftpServer struct {
@@ -39,60 +36,44 @@ type SftpServer struct {
 	sftpServerPort string
 	sftpUserName string
 	sftpUserPassword string
-	restPort string
 	restBasePath string
-	restHealthCheck string
 	conn *ssh.Client
 	client *sftp.Client
 }
 
-func NewServer(cfg ServerCfg) *SftpServer{
-	return &SftpServer{
+func InitServer(cfg ServerCfg) (**SftpServer, error){
+	server := &SftpServer{
 		sftpServerAddress: cfg.SFTP_SERVER_ADDRESS,
 		sftpServerPort:    cfg.SFTP_SERVER_PORT,
 		sftpUserName:      cfg.SFTP_USER_NAME,
 		sftpUserPassword:  cfg.SFTP_USER_PASSWORD,
-		restPort:cfg.REST_PORT,
 		restBasePath:cfg.REST_BASE_PATH,
-		restHealthCheck:cfg.REST_HEALTH_CHECK,
 	}
-}
 
-func (s *SftpServer)Run() error {
 	config := &ssh.ClientConfig{
-		User: s.sftpUserName,
+		User: server.sftpUserName,
 		Auth: []ssh.AuthMethod{
-			ssh.Password(s.sftpUserPassword),
+			ssh.Password(server.sftpUserPassword),
 		},
 		HostKeyCallback:ssh.InsecureIgnoreHostKey(),
 	}
 
-	log.Info("address: ", s.sftpServerAddress+":"+s.sftpServerPort)
-	conn, err := ssh.Dial("tcp", s.sftpServerAddress+":"+s.sftpServerPort, config)
+	log.Info("address: ", server.sftpServerAddress+":"+server.sftpServerPort)
+	conn, err := ssh.Dial("tcp", server.sftpServerAddress+":"+server.sftpServerPort, config)
 	if err != nil {
-		log.WithError(err).Fatal("SSh dial failed")
-		return err
+		log.WithError(err).Error("SSh dial failed")
+		return nil, err
 	}
-	s.conn = conn
+	server.conn = conn
 
 	client, err := sftp.NewClient(conn)
 	if err != nil {
-		log.WithError(err).Fatal("create sftp failed")
-		return err
+		log.WithError(err).Error("create sftp failed")
+		return nil, err
 	}
-	s.client = client
-	router := mux.NewRouter()
-	router.HandleFunc(s.restHealthCheck, healthCheck).Methods(http.MethodGet)
-	router.PathPrefix(s.restBasePath).Handler(s)
+	server.client = client
 
-	http.Handle("/", router)
-	log.Infof("rest2sftp service is running at port %s", s.restPort)
-	return http.ListenAndServe(fmt.Sprintf(":%s", s.restPort), router)
-}
-
-func healthCheck(w http.ResponseWriter, r *http.Request){
-	log.Info("calling healthCheck")
-	w.WriteHeader(http.StatusOK)
+	return &server, nil
 }
 
 func (s *SftpServer)ServeHTTP(w http.ResponseWriter, r *http.Request){
