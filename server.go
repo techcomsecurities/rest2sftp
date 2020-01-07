@@ -10,6 +10,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type FileInfo struct {
@@ -37,11 +38,9 @@ type SftpServer struct {
 	sftpUserName string
 	sftpUserPassword string
 	restBasePath string
-	conn *ssh.Client
-	client *sftp.Client
 }
 
-func InitServer(cfg ServerCfg) (**SftpServer, error){
+func InitServer(cfg ServerCfg) **SftpServer{
 	server := &SftpServer{
 		sftpServerAddress: cfg.SFTP_SERVER_ADDRESS,
 		sftpServerPort:    cfg.SFTP_SERVER_PORT,
@@ -50,30 +49,35 @@ func InitServer(cfg ServerCfg) (**SftpServer, error){
 		restBasePath:cfg.REST_BASE_PATH,
 	}
 
+	log.Info("address: ", server.sftpServerAddress+":"+server.sftpServerPort)
+	log.Info("Base Path:", server.restBasePath)
+
+	return &server
+}
+
+func (s *SftpServer)connect()(*ssh.Client, *sftp.Client, error){
 	config := &ssh.ClientConfig{
-		User: server.sftpUserName,
+		User: s.sftpUserName,
 		Auth: []ssh.AuthMethod{
-			ssh.Password(server.sftpUserPassword),
+			ssh.Password(s.sftpUserPassword),
 		},
 		HostKeyCallback:ssh.InsecureIgnoreHostKey(),
+		Timeout:time.Minute,
 	}
 
-	log.Info("address: ", server.sftpServerAddress+":"+server.sftpServerPort)
-	conn, err := ssh.Dial("tcp", server.sftpServerAddress+":"+server.sftpServerPort, config)
+	conn, err := ssh.Dial("tcp", s.sftpServerAddress+":"+s.sftpServerPort, config)
 	if err != nil {
 		log.WithError(err).Error("SSh dial failed")
-		return nil, err
+		return nil, nil, err
 	}
-	server.conn = conn
 
 	client, err := sftp.NewClient(conn)
 	if err != nil {
 		log.WithError(err).Error("create sftp failed")
-		return nil, err
+		return nil, nil, err
 	}
-	server.client = client
 
-	return &server, nil
+	return conn, client, nil
 }
 
 func (s *SftpServer)ServeHTTP(w http.ResponseWriter, r *http.Request){
@@ -111,10 +115,23 @@ func isDirectory(path string) bool {
 
 func (s *SftpServer)handleGetFolder(w http.ResponseWriter, r *http.Request) {
 	log.Info("handle get folder")
+
+	conn, client, err := s.connect()
+	if err != nil {
+		log.WithError(err).Error("connect sftp server failed")
+		tmpErr := Wrap(err, "connect sftp server failed")
+		tmpErr.StatusCode = 1
+		RespondWithJSON(w, http.StatusBadRequest, tmpErr)
+		return
+	}
+	defer conn.Close()
+	defer client.Close()
+
 	path := r.URL.Path
 	path = s.getFolder(path)
 	log.Info("Folder:", path)
-	fileInfos, err := s.client.ReadDir(path)
+
+	fileInfos, err := client.ReadDir(path)
 	if err != nil {
 		log.WithError(err).Error("read directory error")
 		tmpErr := Wrap(err, "read directory error")
@@ -134,10 +151,23 @@ func (s *SftpServer)handleGetFolder(w http.ResponseWriter, r *http.Request) {
 
 func (s *SftpServer)handlePostFolder(w http.ResponseWriter, r *http.Request) {
 	log.Info("handle post folder")
+
+	conn, client, err := s.connect()
+	if err != nil {
+		log.WithError(err).Error("connect sftp server failed")
+		tmpErr := Wrap(err, "connect sftp server failed")
+		tmpErr.StatusCode = 1
+		RespondWithJSON(w, http.StatusBadRequest, tmpErr)
+		return
+	}
+	defer conn.Close()
+	defer client.Close()
+
 	path := r.URL.Path
 	path = s.getFolder(path)
 	log.Info("Folder:", path)
-	err := s.client.MkdirAll(path)
+
+	err = client.MkdirAll(path)
 	if err != nil {
 		log.WithError(err).Error("Create directory error")
 		tmpErr := Wrap(err, "Create directory error")
@@ -151,10 +181,22 @@ func (s *SftpServer)handlePostFolder(w http.ResponseWriter, r *http.Request) {
 
 func (s *SftpServer)handleDeleteFolder(w http.ResponseWriter, r *http.Request) {
 	log.Info("handle delete folder")
+
+	conn, client, err := s.connect()
+	if err != nil {
+		log.WithError(err).Error("connect sftp server failed")
+		tmpErr := Wrap(err, "connect sftp server failed")
+		tmpErr.StatusCode = 1
+		RespondWithJSON(w, http.StatusBadRequest, tmpErr)
+		return
+	}
+	defer conn.Close()
+	defer client.Close()
+
 	path := r.URL.Path
 	path = s.getFolder(path)
 	log.Info("Folder:", path)
-	err := s.client.RemoveDirectory(path)
+	err = client.RemoveDirectory(path)
 
 	if err != nil {
 		log.WithError(err).Error("Delete directory error")
@@ -169,10 +211,22 @@ func (s *SftpServer)handleDeleteFolder(w http.ResponseWriter, r *http.Request) {
 
 func (s *SftpServer)handleGetFile(w http.ResponseWriter, r *http.Request) {
 	log.Info("handle get file")
+
+	conn, client, err := s.connect()
+	if err != nil {
+		log.WithError(err).Error("connect sftp server failed")
+		tmpErr := Wrap(err, "connect sftp server failed")
+		tmpErr.StatusCode = 1
+		RespondWithJSON(w, http.StatusBadRequest, tmpErr)
+		return
+	}
+	defer conn.Close()
+	defer client.Close()
+
 	path := r.URL.Path
 	path = s.getFolder(path)
 	log.Info("Folder:", path)
-	info, err := s.client.Lstat(path)
+	info, err := client.Lstat(path)
 	if err != nil {
 		log.WithError(err).Error("Get file info error")
 		tmpErr := Wrap(err, "Get file error")
@@ -181,7 +235,7 @@ func (s *SftpServer)handleGetFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	srcFile, err := s.client.Open(path)
+	srcFile, err := client.Open(path)
 	if err != nil {
 		log.WithError(err).Error("Get file error")
 		tmpErr := Wrap(err, "Get file error")
@@ -236,6 +290,18 @@ func (s *SftpServer)handleGetFile(w http.ResponseWriter, r *http.Request) {
 
 func (s *SftpServer)handlePostFile(w http.ResponseWriter, r *http.Request) {
 	log.Info("handle post file")
+
+	conn, client, err := s.connect()
+	if err != nil {
+		log.WithError(err).Error("connect sftp server failed")
+		tmpErr := Wrap(err, "connect sftp server failed")
+		tmpErr.StatusCode = 1
+		RespondWithJSON(w, http.StatusBadRequest, tmpErr)
+		return
+	}
+	defer conn.Close()
+	defer client.Close()
+
 	path := r.URL.Path
 	path = s.getFolder(path)
 	log.Info("Folder:", path)
@@ -250,7 +316,7 @@ func (s *SftpServer)handlePostFile(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
-	destFile, err := s.client.Create(path)
+	destFile, err := client.Create(path)
 	if err != nil {
 		log.WithError(err).Error("create file error")
 		tmpErr := Wrap(err, "Post file error")
@@ -274,10 +340,22 @@ func (s *SftpServer)handlePostFile(w http.ResponseWriter, r *http.Request) {
 
 func (s *SftpServer)handleDeleteFile(w http.ResponseWriter, r *http.Request) {
 	log.Info("handle delete file")
+
+	conn, client, err := s.connect()
+	if err != nil {
+		log.WithError(err).Error("connect sftp server failed")
+		tmpErr := Wrap(err, "connect sftp server failed")
+		tmpErr.StatusCode = 1
+		RespondWithJSON(w, http.StatusBadRequest, tmpErr)
+		return
+	}
+	defer conn.Close()
+	defer client.Close()
+
 	path := r.URL.Path
 	path = s.getFolder(path)
 	log.Info("Folder:", path)
-	err := s.client.Remove(path)
+	err = client.Remove(path)
 
 	if err != nil {
 		log.Info("Delete file error")
